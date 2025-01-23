@@ -22,6 +22,14 @@ const loadGptProfiles = async () => {
 
 loadGptProfiles()
 
+const formatSystemMessage = (systemMessage) => {
+  // 각 요소를 하나의 문자열로 변환
+  const context = systemMessage.context.join(" ");
+  const tone = `톤: ${systemMessage.tone.manner}, 태도: ${systemMessage.tone.attitude}`;
+  const style = `스타일: ${systemMessage.style.description}\n예시: ${systemMessage.style.examples.join("\n")}`;
+  return `${context}\n${tone}\n${style}`;
+};
+
 // 대화 시작 API
 router.post("/startConversation", async (req, res) => {
     const { gpt1Id, gpt2Id } = req.body;
@@ -32,11 +40,15 @@ router.post("/startConversation", async (req, res) => {
     if (!gpt1 || !gpt2) {
       return res.status(400).json({ error: "Invalid GPT IDs" });
     }
-  
+
+    // 시스템 메시지 변환
+    const gpt1SystemMessage = formatSystemMessage(gpt1.systemMessage);
+    const gpt2SystemMessage = formatSystemMessage(gpt2.systemMessage);
+    
     const conversationId = `${gpt1Id}-${gpt2Id}-${Date.now()}`;
     conversations[conversationId] = [
-      { role: "system", content: gpt1.systemMessage },
-      { role: "system", content: gpt2.systemMessage },
+      { role: "system", content: gpt1SystemMessage },
+      { role: "system", content: gpt2SystemMessage },
     ]; // 시스템 메시지 추가
   
     console.log(`Conversation started: ${conversationId}`);
@@ -52,10 +64,13 @@ router.post("/startConversation", async (req, res) => {
     if (!gpt) {
       return res.status(400).json({ error: "Invalid GPT ID" });
     }
+
+    // 시스템 메시지 변환
+    const systemMessage = formatSystemMessage(gpt.systemMessage);
   
     const conversationId = `${gptId}-${Date.now()}`;
     conversations[conversationId] = [
-      { role: "system", content: gpt.systemMessage },
+      { role: "system", content: systemMessage },
     ]; // 초기화 (시스템 메시지 포함)
   
     console.log(`Single conversation started: ${conversationId}`);
@@ -104,7 +119,7 @@ router.post("/startConversation", async (req, res) => {
       { role: "user", content: nextUserMessage }, // 새 사용자 메시지
     ];
   
-    console.log('nextUserMessage', nextUserMessage, speakerId)
+    console.log('nextUserMessage', messageHistory, nextUserMessage, speakerId)
   
     try {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -114,7 +129,7 @@ router.post("/startConversation", async (req, res) => {
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "gpt-4o",
           messages: openAIRequest,
           max_tokens: 100,
           temperature: 0.8, // 응답 다양성 증가
@@ -123,6 +138,7 @@ router.post("/startConversation", async (req, res) => {
       });
   
       const data = await response.json();
+
       const gptReply = data.choices[0]?.message?.content.trim() || "응답이 없습니다.";
   
       // 메시지 기록에 추가
@@ -138,6 +154,38 @@ router.post("/startConversation", async (req, res) => {
     } catch (error) {
       console.error("Error in OpenAI API call:", error.message);
       res.status(500).json({ error: "OpenAI API call failed" });
+    }
+  });
+
+  // 대화 진행 API
+  router.post("/dailyluck", async (req, res) => {
+    try {
+      const { name } = req.body; // 요청에서 이름을 받아옵니다.
+  
+      const prompt = `${name}님의 오늘의 운세를 알려줘. 그냥 적당히 운세를 생성해서 주면 돼. 생성했다는 말은 하지 말고, "${name}님의 오늘의 운세입니다" 느낌으로 시작하면 돼. 받아온 이름은 전부 표시해서 첫 문장을 해줘. ${name}님의 운세입니다 처럼. 사랑운, 재물운, 건강운을 보여줘. 각 운세의 형식은 "**사랑운 :**", "**재물운 :**", "**건강운 :**" 형식으로 보여줘.`;
+  
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4-turbo",
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 1000,
+          temperature: 0.7,
+        }),
+      });
+  
+      const data = await response.json();
+      const fortune = data.choices[0]?.message?.content || "운세를 불러올 수 없습니다.";
+  
+      console.log(`Generated fortune: ${fortune}`);
+      res.json({ fortune });
+    } catch (error) {
+      console.error("Error generating fortune:", error.message);
+      res.status(500).json({ error: "Failed to generate fortune" });
     }
   });
 
